@@ -1,5 +1,5 @@
 ---
-name: responses-image-generation
+name: custom-responses-image-generation
 description: Use this skill whenever the user asks to generate, edit, inpaint, restyle, or create bitmap images through OpenAI's Responses API image_generation tool from Codex. This skill calls the Responses API, saves generated base64 image results to files, uses no npm or pip dependencies, works on Linux/macOS/Windows with either Node.js 18+ or Python 3, and reuses Codex's configured API base URL, model, and key instead of asking the user for credentials.
 ---
 
