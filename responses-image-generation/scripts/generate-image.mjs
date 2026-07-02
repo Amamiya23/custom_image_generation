@@ -18,7 +18,7 @@ Codex config:
   --codex-home <path>         Defaults to $CODEX_HOME or <home>/.codex on Linux, macOS, and Windows
   --base-url <url>            Explicit override. Defaults to Codex provider base_url.
   --response-model <model>    Explicit override. Defaults to Codex top-level model.
-  --api-key <key>             Explicit override. Avoid using this unless debugging.
+  --api-key-env <name>        Environment variable fallback for the API key. Default: OPENAI_API_KEY.
 
 Image generation options:
   --action <generate|edit|auto>
@@ -57,6 +57,9 @@ function parseArgs(argv) {
     }
 
     const key = token.slice(2);
+    if (key === "api-key") {
+      die("--api-key was removed to avoid exposing secrets in command lines. Use Codex auth.json or --api-key-env <name>.");
+    }
     if (["help", "dry-run", "json"].includes(key)) {
       args[key] = true;
       continue;
@@ -123,8 +126,23 @@ function readJsonIfExists(filePath) {
   }
 }
 
+function envValue(name) {
+  if (process.env[name] !== undefined) return process.env[name];
+  const lowerName = name.toLowerCase();
+  for (const [key, value] of Object.entries(process.env)) {
+    if (key.toLowerCase() === lowerName) return value;
+  }
+  return undefined;
+}
+
+function validateEnvName(name, optionName) {
+  if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(name)) {
+    die(`${optionName} must be an environment variable name, not a secret value.`);
+  }
+}
+
 function defaultCodexHome() {
-  return path.resolve(process.env.CODEX_HOME || path.join(os.homedir(), ".codex"));
+  return path.resolve(envValue("CODEX_HOME") || path.join(os.homedir(), ".codex"));
 }
 
 function resolveCodexConfig(args) {
@@ -140,16 +158,21 @@ function resolveCodexConfig(args) {
   const providerName = codexConfig.root.model_provider || "OpenAI";
   const provider = codexConfig.sections[`model_providers.${providerName}`] || {};
   const auth = readJsonIfExists(authPath);
+  const apiKeyEnvName = args["api-key-env"] || "OPENAI_API_KEY";
+  validateEnvName(apiKeyEnvName, "--api-key-env");
 
-  const baseUrl = args["base-url"] || provider.base_url || process.env.OPENAI_BASE_URL || "https://api.openai.com/v1";
-  const responseModel = args["response-model"] || codexConfig.root.model || process.env.OPENAI_MODEL;
-  const apiKey = args["api-key"] || auth.OPENAI_API_KEY || process.env.OPENAI_API_KEY;
+  const baseUrl = args["base-url"] || provider.base_url || envValue("OPENAI_BASE_URL") || "https://api.openai.com/v1";
+  const responseModel = args["response-model"] || codexConfig.root.model || envValue("OPENAI_MODEL");
+  const authApiKey = auth.OPENAI_API_KEY;
+  const envApiKey = envValue(apiKeyEnvName);
+  const apiKey = authApiKey || envApiKey;
+  const apiKeySource = authApiKey ? "codex-auth" : envApiKey ? `env:${apiKeyEnvName}` : "none";
 
   if (!responseModel) {
     die("no Responses model found. Set Codex top-level model or pass --response-model.");
   }
   if (!apiKey && !args["dry-run"]) {
-    die("no API key found. Expected OPENAI_API_KEY in Codex auth.json, environment, or --api-key.");
+    die(`no API key found. Expected OPENAI_API_KEY in Codex auth.json or environment variable ${apiKeyEnvName}.`);
   }
 
   return {
@@ -161,6 +184,7 @@ function resolveCodexConfig(args) {
     baseUrl: baseUrl.replace(/\/+$/, ""),
     responseModel,
     apiKey,
+    apiKeySource,
     hasApiKey: Boolean(apiKey),
   };
 }
@@ -263,6 +287,21 @@ function redactRequest(body) {
   );
 }
 
+function summarizeResponse(responseJson) {
+  return {
+    id: responseJson.id,
+    status: responseJson.status,
+    error: responseJson.error?.message || responseJson.error,
+    output: (responseJson.output || []).map((item) => ({
+      type: item.type,
+      status: item.status,
+      role: item.role,
+      content_types: Array.isArray(item.content) ? item.content.map((content) => content.type) : undefined,
+      error: item.error?.message || item.error,
+    })),
+  };
+}
+
 async function main() {
   if (typeof fetch !== "function") {
     die("Node.js 18+ is required because this script uses the built-in fetch API.");
@@ -294,6 +333,7 @@ async function main() {
       endpoint: `${config.baseUrl}/responses`,
       response_model: config.responseModel,
       has_api_key: config.hasApiKey,
+      api_key_source: config.apiKeySource,
       request: redactRequest(requestBody),
     }, null, 2));
     return;
@@ -329,7 +369,7 @@ async function main() {
   }
 
   if (imageResults.length === 0) {
-    console.error(JSON.stringify(responseJson, null, 2));
+    console.error(JSON.stringify(summarizeResponse(responseJson), null, 2));
     die("response did not contain output[].type == image_generation_call with a result.");
   }
 

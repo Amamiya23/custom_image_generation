@@ -32,7 +32,8 @@ def parse_args():
     parser.add_argument("--codex-home")
     parser.add_argument("--base-url")
     parser.add_argument("--response-model")
-    parser.add_argument("--api-key")
+    parser.add_argument("--api-key", dest="deprecated_api_key", help=argparse.SUPPRESS)
+    parser.add_argument("--api-key-env")
     parser.add_argument("--action", choices=["generate", "edit", "auto"])
     parser.add_argument("--image", action="append", default=[])
     parser.add_argument("--mask")
@@ -47,7 +48,10 @@ def parse_args():
     parser.add_argument("--partial-images", type=int)
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--json", action="store_true")
-    return parser.parse_args()
+    args = parser.parse_args()
+    if args.deprecated_api_key is not None:
+        die("--api-key was removed to avoid exposing secrets in command lines. Use Codex auth.json or --api-key-env <name>.")
+    return args
 
 
 def parse_toml_value(raw):
@@ -97,8 +101,23 @@ def read_json_if_exists(file_path):
         die(f"failed to parse {file_path}: {error}")
 
 
+def env_value(name):
+    if name in os.environ:
+        return os.environ[name]
+    lower_name = name.lower()
+    for key, value in os.environ.items():
+        if key.lower() == lower_name:
+            return value
+    return None
+
+
+def validate_env_name(name, option_name):
+    if not re.match(r"^[A-Za-z_][A-Za-z0-9_]*$", name):
+        die(f"{option_name} must be an environment variable name, not a secret value.")
+
+
 def default_codex_home():
-    return Path(os.environ.get("CODEX_HOME") or Path.home() / ".codex").resolve()
+    return Path(env_value("CODEX_HOME") or Path.home() / ".codex").resolve()
 
 
 def resolve_codex_config(args):
@@ -113,20 +132,25 @@ def resolve_codex_config(args):
     provider_name = codex_config["root"].get("model_provider") or "OpenAI"
     provider = codex_config["sections"].get(f"model_providers.{provider_name}", {})
     auth = read_json_if_exists(auth_path)
+    api_key_env_name = args.api_key_env or "OPENAI_API_KEY"
+    validate_env_name(api_key_env_name, "--api-key-env")
 
     base_url = (
         args.base_url
         or provider.get("base_url")
-        or os.environ.get("OPENAI_BASE_URL")
+        or env_value("OPENAI_BASE_URL")
         or "https://api.openai.com/v1"
     ).rstrip("/")
-    response_model = args.response_model or codex_config["root"].get("model") or os.environ.get("OPENAI_MODEL")
-    api_key = args.api_key or auth.get("OPENAI_API_KEY") or os.environ.get("OPENAI_API_KEY")
+    response_model = args.response_model or codex_config["root"].get("model") or env_value("OPENAI_MODEL")
+    auth_api_key = auth.get("OPENAI_API_KEY")
+    env_api_key = env_value(api_key_env_name)
+    api_key = auth_api_key or env_api_key
+    api_key_source = "codex-auth" if auth_api_key else f"env:{api_key_env_name}" if env_api_key else "none"
 
     if not response_model:
         die("no Responses model found. Set Codex top-level model or pass --response-model.")
     if not api_key and not args.dry_run:
-        die("no API key found. Expected OPENAI_API_KEY in Codex auth.json, environment, or --api-key.")
+        die(f"no API key found. Expected OPENAI_API_KEY in Codex auth.json or environment variable {api_key_env_name}.")
 
     return {
         "codex_home": str(codex_home),
@@ -136,6 +160,7 @@ def resolve_codex_config(args):
         "base_url": base_url,
         "response_model": response_model,
         "api_key": api_key,
+        "api_key_source": api_key_source,
         "has_api_key": bool(api_key),
     }
 
@@ -233,6 +258,24 @@ def redact_request(body):
     return redact(body)
 
 
+def summarize_response(response_json):
+    return {
+        "id": response_json.get("id"),
+        "status": response_json.get("status"),
+        "error": response_json.get("error", {}).get("message") if isinstance(response_json.get("error"), dict) else response_json.get("error"),
+        "output": [
+            {
+                "type": item.get("type"),
+                "status": item.get("status"),
+                "role": item.get("role"),
+                "content_types": [content.get("type") for content in item.get("content", [])] if isinstance(item.get("content"), list) else None,
+                "error": item.get("error", {}).get("message") if isinstance(item.get("error"), dict) else item.get("error"),
+            }
+            for item in response_json.get("output", [])
+        ],
+    }
+
+
 def parse_response_json(status, response_bytes):
     text = response_bytes.decode("utf-8", errors="replace")
     try:
@@ -281,6 +324,7 @@ def main():
             "endpoint": endpoint,
             "response_model": config["response_model"],
             "has_api_key": config["has_api_key"],
+            "api_key_source": config["api_key_source"],
             "request": redact_request(request_body),
         }, indent=2))
         return
@@ -297,7 +341,7 @@ def main():
         if item.get("type") == "image_generation_call" and item.get("result")
     ]
     if not image_results:
-        print(json.dumps(response_json, indent=2), file=sys.stderr)
+        print(json.dumps(summarize_response(response_json), indent=2), file=sys.stderr)
         die("response did not contain output[].type == image_generation_call with a result.")
 
     output_format = tool.get("output_format") or Path(args.out).suffix.lstrip(".") or "png"

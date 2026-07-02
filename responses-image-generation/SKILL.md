@@ -29,8 +29,35 @@ Use Codex's API configuration by default:
 - Read `OPENAI_API_KEY` from the matching `auth.json`.
 - Do not ask the user for an API key when Codex config is available.
 - Do not print, log, commit, or summarize credential values.
+- Do not read or display `auth.json` yourself during normal use; let the bundled script read it inside the child process.
+- Do not pass secret values on the command line. The scripts intentionally reject `--api-key <value>`.
 
-If the Codex config is unavailable, the script falls back to `OPENAI_BASE_URL`, `OPENAI_MODEL`, and `OPENAI_API_KEY`. Treat this as a fallback, not the normal path.
+If the Codex config is unavailable, the script falls back to `OPENAI_BASE_URL`, `OPENAI_MODEL`, and `OPENAI_API_KEY`. Environment variable lookup is case-insensitive so Windows variants such as `openai_api_key` still resolve. Treat this as a fallback, not the normal path.
+
+If the user keeps the key in a different environment variable, pass only the variable name:
+
+```bash
+node <skill-dir>/scripts/generate-image.mjs \
+  --prompt "A quick test image" \
+  --out outputs/test.png \
+  --api-key-env MY_OPENAI_API_KEY
+```
+
+PowerShell example for a current-session variable:
+
+These examples use placeholders. Do not paste real API keys into agent chats, logs, or committed files.
+
+```powershell
+$env:OPENAI_API_KEY = "<your-api-key>"
+node <skill-dir>\scripts\generate-image.mjs --prompt "A quick test image" --out outputs\test.png
+```
+
+`cmd.exe` example for a current-session variable:
+
+```bat
+set OPENAI_API_KEY=<your-api-key>
+node <skill-dir>\scripts\generate-image.mjs --prompt "A quick test image" --out outputs\test.png
+```
 
 ## Default Workflow
 
@@ -172,6 +199,7 @@ The script maps common OpenAI `image_generation` tool options:
 - `--moderation auto|low`
 - `--output-compression <0-100>`
 - `--response-model <model>` Responses model; defaults to Codex's configured model
+- `--api-key-env <name>` API key environment variable name when Codex auth is unavailable; defaults to `OPENAI_API_KEY`
 
 OpenAI's current docs show `responses.create` with `tools: [{ type: "image_generation" }]`; generated image data is returned in `output` items whose type is `image_generation_call`, with base64 image data in `result`.
 
@@ -192,3 +220,4 @@ If no image result is returned:
 - Re-run with `--dry-run` to confirm config and request shape.
 - Verify the configured provider supports the Responses API and `image_generation`.
 - Do not expose the API key while debugging. Redact request headers and auth fields.
+- Do not use `cat`, `type`, `Get-Content`, or similar commands on `auth.json` for debugging. Use the script's `--dry-run`, which only reports `has_api_key` and `api_key_source`.
