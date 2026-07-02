@@ -1,6 +1,6 @@
 # Custom Image Generation Skill
 
-一个 Codex skill，用自定义的OpenAI Responses API 的 `image_generation` 工具生成、编辑和局部重绘图片。脚本会读取 Codex API 配置，调用接口完成图片生成等操作。适合中转站用户，并保证开箱即用
+一个 Codex skill，用自定义的OpenAI Responses API 的 `image_generation` 工具生成、编辑和局部重绘图片。脚本会读取 Codex API 配置，调用接口完成图片生成等操作。**适合中转站用户**，并保证开箱即用
 
 ## 特性
 
