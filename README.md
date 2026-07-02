@@ -48,3 +48,7 @@ node responses-image-generation/scripts/generate-image.mjs \
 - `--dry-run` 只显示 `has_api_key` 和 `api_key_source`，不会显示密钥值。
 - `outputs/` 已被 `.gitignore` 忽略，生成图片默认可放在该目录。
 
+
+## Links
+
+[LinuxDo](https://linux.do/) 
