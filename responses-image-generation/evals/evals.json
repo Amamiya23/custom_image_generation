@@ -1,0 +1,25 @@
+{
+  "skill_name": "responses-image-generation",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "Generate a 1024x1024 PNG image of a matte black ceramic mug on a walnut desk with soft window light. Save it to outputs/mug.png and use the Codex API configuration without asking me for a key.",
+      "expected_output": "The agent uses the bundled script, resolves Codex config for base URL/model/key, calls Responses API image_generation, and saves outputs/mug.png.",
+      "files": []
+    },
+    {
+      "id": 2,
+      "prompt": "Create a transparent-background app icon of a folded paper crane, no text, centered with enough padding. Save as outputs/crane-icon.png.",
+      "expected_output": "The agent sets background transparent and png output format, calls image_generation, and reports the saved file path.",
+      "files": []
+    },
+    {
+      "id": 3,
+      "prompt": "Restyle reference.png as a polished editorial illustration while preserving composition. Use high input fidelity and save the result to outputs/reference-restyled.png.",
+      "expected_output": "The agent uses --image reference.png, --action edit, --input-fidelity high, and the Codex API config; if the input file is missing, it reports that specific blocker.",
+      "files": [
+        "reference.png"
+      ]
+    }
+  ]
+}
