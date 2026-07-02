@@ -8,6 +8,8 @@ import os
 from pathlib import Path
 import re
 import sys
+import threading
+import time
 import urllib.error
 import urllib.request
 
@@ -22,6 +24,29 @@ Runtime:
 def die(message, code=1):
     print(f"Error: {message}", file=sys.stderr)
     raise SystemExit(code)
+
+
+def progress(args, message):
+    if not args.no_progress:
+        print(f"[image-generation] {message}", file=sys.stderr, flush=True)
+
+
+def start_progress(args):
+    if args.no_progress:
+        return lambda: None
+
+    started_at = time.monotonic()
+    stop_event = threading.Event()
+    progress(args, "Request sent. Image generation can take several minutes; wait for this command to finish before retrying.")
+
+    def loop():
+        while not stop_event.wait(15):
+            elapsed_seconds = round(time.monotonic() - started_at)
+            progress(args, f"Still waiting for image result ({elapsed_seconds}s elapsed). Do not start another generation for the same request unless this command fails.")
+
+    thread = threading.Thread(target=loop, daemon=True)
+    thread.start()
+    return stop_event.set
 
 
 def parse_args():
@@ -48,6 +73,7 @@ def parse_args():
     parser.add_argument("--partial-images", type=int)
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--json", action="store_true")
+    parser.add_argument("--no-progress", action="store_true")
     args = parser.parse_args()
     if args.deprecated_api_key is not None:
         die("--api-key was removed to avoid exposing secrets in command lines. Use Codex auth.json or --api-key-env <name>.")
@@ -329,7 +355,13 @@ def main():
         }, indent=2))
         return
 
-    status, response_bytes = post_json(endpoint, config["api_key"], request_body)
+    stop_progress = start_progress(args)
+    try:
+        status, response_bytes = post_json(endpoint, config["api_key"], request_body)
+    finally:
+        stop_progress()
+    progress(args, "Response received. Decoding image data.")
+
     response_json = parse_response_json(status, response_bytes)
     if status < 200 or status >= 300:
         message = response_json.get("error", {}).get("message") or response_json.get("message") or json.dumps(response_json)[:1000]

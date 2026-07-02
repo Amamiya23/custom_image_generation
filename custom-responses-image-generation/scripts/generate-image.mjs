@@ -37,6 +37,7 @@ Image generation options:
 Other:
   --dry-run                   Print redacted config and request body without calling the API.
   --json                      Print machine-readable result summary.
+  --no-progress               Disable progress messages on stderr while waiting for the API.
   --help
 
 Runtime:
@@ -46,6 +47,26 @@ Runtime:
 function die(message, code = 1) {
   console.error(`Error: ${message}`);
   process.exit(code);
+}
+
+function progress(args, message) {
+  if (!args["no-progress"]) {
+    console.error(`[image-generation] ${message}`);
+  }
+}
+
+function startProgress(args) {
+  if (args["no-progress"]) return () => {};
+
+  const startedAt = Date.now();
+  progress(args, "Request sent. Image generation can take several minutes; wait for this command to finish before retrying.");
+  const timer = setInterval(() => {
+    const elapsedSeconds = Math.round((Date.now() - startedAt) / 1000);
+    progress(args, `Still waiting for image result (${elapsedSeconds}s elapsed). Do not start another generation for the same request unless this command fails.`);
+  }, 15000);
+  if (typeof timer.unref === "function") timer.unref();
+
+  return () => clearInterval(timer);
 }
 
 function parseArgs(argv) {
@@ -60,7 +81,7 @@ function parseArgs(argv) {
     if (key === "api-key") {
       die("--api-key was removed to avoid exposing secrets in command lines. Use Codex auth.json or --api-key-env <name>.");
     }
-    if (["help", "dry-run", "json"].includes(key)) {
+    if (["help", "dry-run", "json", "no-progress"].includes(key)) {
       args[key] = true;
       continue;
     }
@@ -339,16 +360,25 @@ async function main() {
     return;
   }
 
-  const response = await fetch(`${config.baseUrl}/responses`, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${config.apiKey}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(requestBody),
-  });
+  let response;
+  let responseText;
+  const stopProgress = startProgress(args);
+  try {
+    response = await fetch(`${config.baseUrl}/responses`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${config.apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(requestBody),
+    });
 
-  const responseText = await response.text();
+    responseText = await response.text();
+  } finally {
+    stopProgress();
+  }
+  progress(args, "Response received. Decoding image data.");
+
   let responseJson;
   try {
     responseJson = JSON.parse(responseText);

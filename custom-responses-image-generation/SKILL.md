@@ -16,6 +16,7 @@ Use this skill to create or edit images through OpenAI's `Responses API` with th
 - Does not require `npm install`, `pip install`, the OpenAI SDK, curl, jq, or base64 shell utilities.
 - Works on Linux, macOS, and Windows when run as `node <skill-dir>/scripts/generate-image.mjs ...` or `python3 <skill-dir>/scripts/generate-image.py ...`.
 - Do not rely on executable bits, shebang behavior, or Bash line continuations for Windows usage.
+- The scripts print progress messages to stderr while waiting for the API; stdout remains reserved for the final file summary or `--json` output.
 
 ## Source Of Credentials
 
@@ -59,11 +60,22 @@ set OPENAI_API_KEY=<your-api-key>
 node <skill-dir>\scripts\generate-image.mjs --prompt "A quick test image" --out outputs\test.png
 ```
 
+## Long-Running Behavior
+
+Treat image generation and editing as long-running operations. A normal request can take several minutes, especially for high quality, image edits, multiple inputs, or slow compatible providers.
+
+- Run exactly one generation command for a user request, then wait for that command to finish.
+- Do not start a second generation just because the command has not returned quickly, has only printed progress messages, or appears idle.
+- If your shell tool exposes a running session, poll or wait on the existing session instead of launching the same command again.
+- Rerun only after the command exits with an error, the user explicitly asks for another variation, or you intentionally change the prompt/settings.
+- Treat `[image-generation] Still waiting...` messages as healthy progress, not as a failure condition.
+- Use `--no-progress` only when stderr must stay silent; otherwise leave progress enabled so long requests are visibly alive.
+
 ## Default Workflow
 
 1. Clarify only missing creative requirements that materially affect the image, such as subject, style, aspect ratio, or output filename.
 2. Prefer saving generated files under a local output directory such as `outputs/` unless the user named a path.
-3. Run one bundled script. Prefer Node when available:
+3. Run one bundled script once and wait for it to complete. Prefer Node when available:
 
    ```bash
    node <skill-dir>/scripts/generate-image.mjs \
@@ -200,6 +212,7 @@ The script maps common OpenAI `image_generation` tool options:
 - `--output-compression <0-100>`
 - `--response-model <model>` Responses model; defaults to Codex's configured model
 - `--api-key-env <name>` API key environment variable name when Codex auth is unavailable; defaults to `OPENAI_API_KEY`
+- `--no-progress` disables progress messages on stderr while waiting for the API
 
 OpenAI's current docs show `responses.create` with `tools: [{ type: "image_generation" }]`; generated image data is returned in `output` items whose type is `image_generation_call`, with base64 image data in `result`.
 
@@ -218,6 +231,7 @@ If no image result is returned:
 
 - Check whether the response contains a refusal, tool error, or policy message.
 - Re-run with `--dry-run` to confirm config and request shape.
+- Do not retry while the original generation command is still running. Wait for a success or failure exit first.
 - Verify the configured provider supports the Responses API and `image_generation`.
 - Do not expose the API key while debugging. Redact request headers and auth fields.
 - Do not use `cat`, `type`, `Get-Content`, or similar commands on `auth.json` for debugging. Use the script's `--dry-run`, which only reports `has_api_key` and `api_key_source`.

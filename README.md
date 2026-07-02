@@ -15,7 +15,8 @@ https://github.com/Amamiya23/custom_image_generation/tree/main/custom-responses-
 - 支持 `size`、`quality`、`format`、`background`、`input_fidelity` 等常用参数。
 - 无第三方依赖：Node 版本不需要 `npm install`，Python 版本不需要 `pip install`。
 - 跨平台：Linux、macOS、Windows 均可用。
-- 默认复用 Codex 配置和密钥，不要求用户手动粘贴 API key。
+- 默认复用 Codex 配置和密钥，不要求用户进行二次自定义。
+- 生成过程会持续输出进度提示，避免 Codex 因图片生成较慢而误以为卡住并重复生成。
 
 
 ## 凭据来源
@@ -46,5 +47,4 @@ node responses-image-generation/scripts/generate-image.mjs \
 - 不要把 `auth.json` 内容打印到聊天、日志或提交中。
 - `--dry-run` 只显示 `has_api_key` 和 `api_key_source`，不会显示密钥值。
 - `outputs/` 已被 `.gitignore` 忽略，生成图片默认可放在该目录。
-
 

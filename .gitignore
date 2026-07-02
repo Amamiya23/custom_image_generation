@@ -1,2 +1,4 @@
 #输出目录
 outputs
+
+custom-responses-image-generation/scripts/__pycache__
