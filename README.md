@@ -10,6 +10,12 @@
 - 跨平台：Linux、macOS、Windows 均可用。
 - 默认复用 Codex 配置和密钥，不要求用户手动粘贴 API key。
 
+## 安装：
+直接将此内容发给Codex：
+```text
+请安装这个 Codex skill：
+https://github.com/Amamiya23/custom_image_generation/tree/main/custom-responses-image-generation
+```
 
 ## 凭据来源
 
